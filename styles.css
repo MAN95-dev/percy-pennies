@@ -134,6 +134,13 @@ h1, h2, h3 { margin: 0; }
 .item-row.zero .name, .item-row.zero .amt > b { color: var(--faint); }
 .add-link { display: block; width: 100%; padding: 12px 16px 12px 42px; border: 0; background: none; text-align: left; color: var(--accent); font-weight: 600; font-size: 15px; }
 
+/* Last added */
+.last-added { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; text-align: left; padding: 12px 16px; }
+.last-added p { margin: 0; flex: 1; min-width: 0; }
+.last-added b { display: block; font-size: 15px; font-weight: 640; }
+.last-added span:not(.dot) { display: block; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.last-added .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex: none; }
+
 /* Prompt card */
 .prompt { display: flex; gap: 12px; align-items: center; background: var(--surface-2); box-shadow: none; }
 .prompt p { margin: 0; flex: 1; font-size: 15px; }

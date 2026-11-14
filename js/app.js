@@ -179,6 +179,7 @@ function renderMonth() {
       <h1>${monthName(m)}${m === now ? '<small>This month</small>' : ''}</h1>
       <button class="icon-btn" data-act="month" data-n="1" aria-label="Next month">${icon.next}</button>
     </div>
+    ${lastAddedBar()}
     <section class="card summary">
       <div class="label">Spent${soFar}</div>
       <div class="big">${money(out)}</div>
@@ -233,6 +234,54 @@ function groupCard(g, m, prev, goodUp) {
     </button>
     ${open ? `<div class="items">${rows}</div>` : ''}
   </section>`;
+}
+
+// ---------- Last added ----------
+
+// When an amount was added or last changed. Amounts imported from the spreadsheet have no date.
+const stamp = (e) => e.updated || e.added || '';
+const recent = () => state.entries.filter(stamp).sort((x, y) => stamp(y).localeCompare(stamp(x)));
+
+function when(iso, withTime = true) {
+  const d = new Date(iso);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const t = new Date();
+  const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const days = Math.round((today - day) / 864e5);
+  const time = withTime ? ` at ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '';
+  if (days === 0) return `Today${time}`;
+  if (days === 1) return `Yesterday${time}`;
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === t.getFullYear() ? undefined : 'numeric' });
+}
+
+function lastAddedBar() {
+  const last = recent()[0];
+  if (!last) {
+    const ms = idx().months;
+    if (!ms.length) return '';
+    return `<section class="card last-added"><span class="dot" aria-hidden="true"></span><p><b>Nothing added in the app yet</b><span>Spreadsheet figures up to ${monthName(ms[ms.length - 1], 'short')} ${ms[ms.length - 1].slice(0, 4)}</span></p></section>`;
+  }
+  const hit = idx().items[last.item];
+  const what = `${hit ? esc(hit.item.name) : 'Amount'} ${money(last.amount)}${last.note ? ` · ${esc(last.note)}` : ''}`;
+  return `<button class="card last-added" data-act="recent">
+    <span class="dot" aria-hidden="true"></span>
+    <p><b>Last ${last.updated ? 'updated' : 'added'} ${when(stamp(last)).replace(/^[TY]/, (c) => c.toLowerCase()).replace(/^(\w{3}) /, 'on $1 ')}</b><span>${what}${last.month !== thisMonth() ? ` (${monthName(last.month)})` : ''}</span></p>
+    ${icon.chev}
+  </button>`;
+}
+
+function recentSheet() {
+  const list = recent().slice(0, 15);
+  openSheet(`
+    <div class="sheet-head"><div><h2>Recently added</h2><p>Newest first. Tap one to change it.</p></div><button class="link" data-act="close">Done</button></div>
+    <section class="card">
+      ${list.map((e) => {
+        const hit = idx().items[e.item];
+        return `<button class="entry" data-act="edit-entry" data-id="${e.id}">
+          <span class="name">${hit ? esc(hit.item.name) : 'Amount'}${e.note ? ` · ${esc(e.note)}` : ''}<small class="muted" style="display:block;font-size:13px">${when(stamp(e))}${e.updated ? ' (changed)' : ''} · for ${monthName(e.month)}</small></span>
+          <b>${money(e.amount)}</b></button>`;
+      }).join('')}
+    </section>`);
 }
 
 // Regular bills paid last month that haven't been logged yet this month
@@ -541,7 +590,7 @@ function itemSheet(id) {
   openSheet(`
     <div class="sheet-head"><div><h2>${esc(item.name)}</h2><p>${esc(group.name)} · ${monthName(m)}</p></div><button class="link" data-act="close">Done</button></div>
     <section class="card">
-      ${list.length ? list.map((e) => `<button class="entry" data-act="edit-entry" data-id="${e.id}"><span class="name">${e.note ? esc(e.note) : '<span class="muted">No note</span>'}</span><b>${money(e.amount)}</b></button>`).join('') : '<div class="muted small">Nothing logged this month.</div>'}
+      ${list.length ? list.map((e) => `<button class="entry" data-act="edit-entry" data-id="${e.id}"><span class="name">${e.note ? esc(e.note) : '<span class="muted">No note</span>'}${stamp(e) ? `<small class="muted" style="display:block;font-size:13px">Added ${when(stamp(e), false)}</small>` : ''}</span><b>${money(e.amount)}</b></button>`).join('') : '<div class="muted small">Nothing logged this month.</div>'}
     </section>
     <button class="btn block" data-act="add" data-item="${id}">+ Add to ${esc(item.name)}</button>
     <h2 class="section-title">Last 12 months</h2>
@@ -608,6 +657,7 @@ document.addEventListener('click', (ev) => {
     }
     case 'add': entrySheet({ item: d.item, group: d.group }); break;
     case 'item': itemSheet(d.id); break;
+    case 'recent': recentSheet(); break;
     case 'edit-entry': entrySheet({ entry: state.entries.find((e) => e.id === d.id) }); break;
     case 'delete-entry': {
       const id = $sheet.querySelector('[data-form=entry]').dataset.id;
@@ -620,7 +670,8 @@ document.addEventListener('click', (ev) => {
       const prev = addMonths(ui.month, -1);
       const list = regularFrom(prev, ui.month);
       snapshot();
-      for (const r of list) state.entries.push({ id: uid(), month: ui.month, item: r.item, amount: r.amount });
+      const added = new Date().toISOString();
+      for (const r of list) state.entries.push({ id: uid(), month: ui.month, item: r.item, amount: r.amount, added });
       save(); render(); toast(`Copied ${list.length} bills from ${MONTHS[+prev.slice(5) - 1]}`, true);
       break;
     }
@@ -670,7 +721,8 @@ document.addEventListener('submit', (ev) => {
     const data = { month: f.month.value, item: f.item.value, amount, note: f.note.value.trim() };
     if (!data.note) delete data.note;
     const existing = f.dataset.id && state.entries.find((e) => e.id === f.dataset.id);
-    if (existing) { delete existing.note; Object.assign(existing, data); } else state.entries.push({ id: uid(), ...data });
+    const nowIso = new Date().toISOString();
+    if (existing) { delete existing.note; Object.assign(existing, data, { updated: nowIso }); } else state.entries.push({ id: uid(), ...data, added: nowIso });
     ui.lastItem = data.item; saveUi();
     save(); closeSheet();
     ui.month = data.month;
