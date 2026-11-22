@@ -609,6 +609,35 @@ function nameSheet({ title, value = '', form, data = {}, extra = '' }) {
   setTimeout(() => $sheet.querySelector('[name=name]').focus(), 250);
 }
 
+// Deleting a line that has amounts: move them to another line first, or delete them with it
+function deleteItemSheet(id) {
+  const { item } = idx().items[id];
+  const list = state.entries.filter((e) => e.item === id);
+  const total = list.reduce((t, e) => t + e.amount, 0);
+  const opts = state.groups
+    .map((g) => ({ g, items: g.items.filter((it) => it.id !== id) }))
+    .filter((x) => x.items.length)
+    .map(({ g, items }) => `<optgroup label="${esc(g.name)}">${items.map((it) => `<option value="${it.id}">${esc(it.name)}</option>`).join('')}</optgroup>`).join('');
+  openSheet(`
+    <div class="sheet-head"><h2>Delete ${esc(item.name)}</h2><button class="link" data-act="close">Cancel</button></div>
+    <p class="small" style="margin-top:0">This line has ${list.length} amount${list.length > 1 ? 's' : ''} adding up to <b>${money(total)}</b>. You can move ${list.length > 1 ? 'them' : 'it'} to another line first, so your totals stay the same.</p>
+    ${opts ? `<label class="field"><span>Move ${list.length > 1 ? 'them' : 'it'} to</span><select class="input" name="moveTo">${opts}</select></label>
+    <button class="btn block" type="button" data-act="delete-item-move" data-id="${id}">Move and delete line</button>` : ''}
+    <button class="btn danger block" type="button" data-act="delete-item-all" data-id="${id}" style="margin-top:8px">Delete line and its amounts</button>`);
+}
+
+// Remove a line. With moveTo, its amounts go to that line; otherwise they are deleted too.
+function removeItem(id, moveTo = null) {
+  const toName = moveTo ? idx().items[moveTo].item.name : '';
+  snapshot();
+  for (const g of state.groups) g.items = g.items.filter((it) => it.id !== id);
+  if (moveTo) for (const e of state.entries) { if (e.item === id) e.item = moveTo; }
+  else state.entries = state.entries.filter((e) => e.item !== id);
+  if (ui.target === 'item:' + id) { ui.target = 'all'; saveUi(); }
+  save(); closeSheet(); render();
+  toast(moveTo ? `Line deleted, amounts moved to ${toName}` : 'Line deleted', true);
+}
+
 function itemEditSheet(id) {
   const { item, group } = idx().items[id];
   const used = state.entries.filter((e) => e.item === id).length;
@@ -685,16 +714,16 @@ document.addEventListener('click', (ev) => {
     case 'new-group': nameSheet({ title: 'New group', form: 'group', data: { id: '' } }); break;
     case 'new-item': nameSheet({ title: `New line in ${groupById(d.group).name}`, form: 'item', data: { id: '', group: d.group }, extra: '<label class="toggle"><input type="checkbox" name="regular"><span>Regular bill <span class="muted small">(offer to copy it each month)</span></span></label>' }); break;
     case 'edit-item': itemEditSheet(d.id); break;
-    case 'delete-item': {
-      const used = state.entries.filter((e) => e.item === d.id).length;
-      if (used && !confirm(`Delete "${idx().items[d.id].item.name}" and its ${used} amount${used > 1 ? 's' : ''}? Your monthly totals will go down by those amounts.`)) break;
-      snapshot();
-      for (const g of state.groups) g.items = g.items.filter((it) => it.id !== d.id);
-      state.entries = state.entries.filter((e) => e.item !== d.id);
-      if (ui.target === 'item:' + d.id) { ui.target = 'all'; saveUi(); }
-      save(); closeSheet(); render(); toast('Line deleted', true);
+    case 'delete-item':
+      if (state.entries.some((e) => e.item === d.id)) deleteItemSheet(d.id);
+      else removeItem(d.id);
+      break;
+    case 'delete-item-move': {
+      const to = $sheet.querySelector('[name=moveTo]').value;
+      removeItem(d.id, to);
       break;
     }
+    case 'delete-item-all': removeItem(d.id); break;
     case 'export': exportBackup(); break;
     case 'wipe':
       if (confirm('Erase every amount and category on this phone? Save a backup first if you might want it back.')) {
