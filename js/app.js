@@ -617,7 +617,8 @@ function itemEditSheet(id) {
     title: 'Edit line', value: item.name, form: 'item', data: { id },
     extra: `<label class="field"><span>Group</span><select class="input" name="group">${groupOpts}</select></label>
       <label class="toggle"><input type="checkbox" name="regular" ${item.regular ? 'checked' : ''}><span>Regular bill <span class="muted small">(offer to copy it each month)</span></span></label>
-      ${used ? `<p class="hint">Used ${used} time${used > 1 ? 's' : ''}. Renaming keeps its history.</p>` : `<button class="btn danger block" type="button" data-act="delete-item" data-id="${id}" style="margin-bottom:8px">Delete this line</button>`}`,
+      ${used ? `<p class="hint">Used ${used} time${used > 1 ? 's' : ''}. Renaming keeps its history.</p>` : ''}
+      <button class="btn danger block" type="button" data-act="delete-item" data-id="${id}" style="margin-bottom:8px">Delete this line</button>`,
   });
 }
 
@@ -685,8 +686,12 @@ document.addEventListener('click', (ev) => {
     case 'new-item': nameSheet({ title: `New line in ${groupById(d.group).name}`, form: 'item', data: { id: '', group: d.group }, extra: '<label class="toggle"><input type="checkbox" name="regular"><span>Regular bill <span class="muted small">(offer to copy it each month)</span></span></label>' }); break;
     case 'edit-item': itemEditSheet(d.id); break;
     case 'delete-item': {
+      const used = state.entries.filter((e) => e.item === d.id).length;
+      if (used && !confirm(`Delete "${idx().items[d.id].item.name}" and its ${used} amount${used > 1 ? 's' : ''}? Your monthly totals will go down by those amounts.`)) break;
       snapshot();
       for (const g of state.groups) g.items = g.items.filter((it) => it.id !== d.id);
+      state.entries = state.entries.filter((e) => e.item !== d.id);
+      if (ui.target === 'item:' + d.id) { ui.target = 'all'; saveUi(); }
       save(); closeSheet(); render(); toast('Line deleted', true);
       break;
     }
